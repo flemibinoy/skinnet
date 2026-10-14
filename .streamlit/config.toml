@@ -1,0 +1,10 @@
+[browser]
+gatherUsageStats = false
+[server]
+maxUploadSize = 20
+[theme]
+primaryColor = "#49328a"
+backgroundColor = "#fafbfc"
+secondaryBackgroundColor = "#f0f1f5"
+textColor = "#20212b"
+font = "sans-serif"
