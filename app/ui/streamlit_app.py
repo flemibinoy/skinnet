@@ -6,7 +6,13 @@ import streamlit as st
 
 from app.ui.design import CSS
 from app.ui.helpers import PAGES, default_workspace
-from app.ui.pages import dataset_page, fairness_page, inspect_page, model_page
+from app.ui.pages import (
+    dataset_page,
+    fairness_page,
+    inspect_page,
+    model_page,
+    overview_page,
+)
 
 st.set_page_config(
     page_title="SkinNet+ · Dermatology research", layout="wide", initial_sidebar_state="collapsed"
@@ -19,15 +25,19 @@ st.markdown(
 root = Path(st.session_state.get("_artifact_root", "artifacts"))
 if "workspace" not in st.session_state:
     st.session_state["workspace"] = default_workspace(root)
+if st.session_state.get("navigation") not in PAGES:
+    st.session_state["navigation"] = "Overview"
 page = st.radio(
     "Navigation", PAGES, horizontal=True, label_visibility="collapsed", key="navigation"
 )
 workspace = st.session_state["workspace"]
-if page == "Inspect an image":
+if page == "Overview":
+    overview_page(workspace)
+elif page == "Inspect an image":
     inspect_page(workspace)
 elif page == "Dataset & evaluation":
     dataset_page(workspace)
-elif page == "Fairness research":
+elif page == "Research limitations":
     fairness_page(workspace)
 else:
     model_page(workspace, root)

@@ -100,6 +100,25 @@ This explicitly downloads ImageNet weights if absent. It remains a four-example 
 check, not a research baseline. Both smoke commands were executed successfully in this workspace.
 Their output directories already exist; use fresh names when repeating commands.
 
+## Windows PowerShell development demo
+
+From the project root, use the already validated manifest and the bounded development
+configuration:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.main train --manifest .\artifacts\dataset\manifest.csv --config .\configs\dev.json --output .\artifacts\dev-demo-next
+.\.venv\Scripts\python.exe -m app.main evaluate --checkpoint .\artifacts\dev-demo-next\best.pt --manifest .\artifacts\dev-demo-next\manifest.csv --output .\artifacts\dev-demo-next\evaluation --device cpu
+.\.venv\Scripts\python.exe -m streamlit run .\app\ui\streamlit_app.py
+```
+
+`configs/dev.json` is an engineering smoke run: one epoch, two training batches, two validation
+batches, 64-pixel inputs, CPU, and random initialization. The resulting checkpoint and its
+held-out evaluation are useful for demonstrating the software pipeline only; they are not a
+research baseline or performance claim. Use a fresh, empty output folder for each run; the
+`artifacts\dev-demo-next` example leaves existing baseline, dataset, and demo outputs untouched.
+Select **Engineering smoke test** in **Model & experiments** and acknowledge its limitations
+before using that checkpoint in the UI.
+
 ## Explain and inspect
 
 ```bash

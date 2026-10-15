@@ -10,11 +10,14 @@ import streamlit as st
 from app.config import CLASSES
 from app.inference.predictor import Predictor, validate_upload
 from app.models.checkpoints import load_checkpoint
-from app.ui.design import empty_state, probability_bars
+from app.ui.design import empty_state
 from app.ui.helpers import (
     CLASS_NAMES,
+    checkpoint_guidance,
+    checkpoint_completion_status,
     class_distribution,
     discover_runs,
+    EvaluationRunTypeMismatch,
     fairness_verified,
     inspection_signature,
     read_report,
@@ -24,9 +27,33 @@ from app.ui.helpers import (
     validate_model_purpose,
 )
 
-
 def navigate(page):
     st.session_state["navigation"] = page
+
+
+def reset_inspection():
+    st.session_state["upload_generation"] = st.session_state.get("upload_generation", 0) + 1
+    st.session_state.pop("analysis", None)
+    st.session_state.pop("analysis_signature", None)
+
+
+def analyze_image(raw, workspace):
+    image = validate_upload(raw)
+    predictor = Predictor(workspace["checkpoint"], workspace["allow_smoke"])
+    validate_model_purpose(predictor.metadata, workspace["mode"], workspace["allow_smoke"])
+    complete, warning = checkpoint_completion_status(
+        workspace["checkpoint"], predictor.metadata.get("epoch")
+    )
+    if workspace["mode"] == "Research model" and complete is False:
+        raise ValueError(warning)
+    result = predictor.predict(image)
+    overlay = None
+    explanation_error = None
+    try:
+        overlay = predictor.explain(image)
+    except (ValueError, RuntimeError, OSError) as exc:
+        explanation_error = str(exc)
+    return image, result, overlay, predictor.metadata, explanation_error
 
 
 def heading(title, description):
@@ -64,6 +91,70 @@ def smoke_notice(workspace):
         )
 
 
+def overview_page(workspace):
+    heading(
+        "SkinNet+ research workspace",
+        "An explainable, seven-category dermoscopic image-classification prototype.",
+    )
+    st.markdown(
+        '<div class="notice"><strong>Research software, not a medical device.</strong> '
+        "It is not clinically validated, cannot diagnose a patient, and must not guide care. "
+        "Model scores are uncalibrated; the project does not apply a calibration procedure.</div>",
+        unsafe_allow_html=True,
+    )
+    col_a, col_b = st.columns([1.1, 0.9], gap="large")
+    with col_a:
+        st.subheader("A transparent workflow")
+        st.markdown(
+            "1. **Inspect** a dermoscopic JPEG or PNG locally.\n"
+            "2. **Review** the seven-class model scores and Grad-CAM explanation, if available.\n"
+            "3. **Evaluate** a saved model on its frozen held-out split.\n"
+            "4. **Interpret cautiously**: smoke runs test software, not scientific performance."
+        )
+        st.button(
+            "Start image inspection",
+            type="primary",
+            on_click=navigate,
+            args=("Inspect an image",),
+        )
+    with col_b:
+        st.subheader("Current local artifacts")
+        checkpoint = Path(workspace["checkpoint"])
+        st.write("**Selected model:** " + workspace["label"])
+        if checkpoint.is_file():
+            st.write("Checkpoint file exists; compatibility is verified before inference.")
+        else:
+            st.warning(checkpoint_guidance(checkpoint))
+        if Path(workspace["dataset"], "validation.json").is_file():
+            st.write("Dataset validation report found.")
+        else:
+            st.write("No dataset validation report is selected.")
+        st.button(
+            "Choose a model or experiment",
+            on_click=navigate,
+            args=("Model & experiments",),
+        )
+    st.divider()
+    st.subheader("Research scope")
+    a, b, c = st.columns(3)
+    a.markdown(
+        "**Task**  \nSeven HAM10000 lesion categories from dermoscopic images. Other image types "
+        "and diagnoses are outside the modeled task."
+    )
+    b.markdown(
+        "**Evidence**  \nOnly saved, provenance-checked reports for the selected checkpoint are "
+        "shown as evaluation. No report means no performance claim."
+    )
+    c.markdown(
+        "**Fairness**  \nHAM10000 does not provide verified skin-tone labels sufficient to "
+        "establish skin-tone fairness."
+    )
+    st.caption(
+        "Images are processed locally in the current session and are not saved by default. "
+        "Consult the dataset licence and project limitations before research use or sharing."
+    )
+
+
 def inspect_page(workspace):
     heading(
         "Inspect an image",
@@ -75,12 +166,17 @@ def inspect_page(workspace):
     signature = None
     with left:
         st.subheader("Upload an image")
+        generation = st.session_state.get("upload_generation", 0)
         upload = st.file_uploader(
             "Drag an image here or browse files",
             type=["jpg", "jpeg", "png"],
             help="JPEG or PNG, up to 20 MB. At least 32 pixels per side; up to 20 megapixels.",
+            key=f"image_upload_{generation}",
         )
-        st.caption("JPEG / PNG · up to 20 MB · processed locally, not saved by default")
+        st.caption(
+            "JPEG or PNG · maximum 20 MB · at least 32 pixels per side · maximum 20 megapixels. "
+            "Processed locally and not saved by default."
+        )
         if upload:
             try:
                 raw = upload.getvalue()
@@ -93,47 +189,59 @@ def inspect_page(workspace):
                 )
             except (ValueError, OSError) as exc:
                 diagnostic("Image upload", exc)
-                st.error(
-                    "This image could not be opened. Choose an intact JPEG or PNG under 20 MB, at least 32 pixels per side and no larger than 20 megapixels."
-                )
+                st.error(f"Image rejected: {exc}")
         if st.session_state.get("analysis_signature") != signature:
             st.session_state.pop("analysis", None)
             st.session_state.pop("analysis_signature", None)
         available = Path(workspace["checkpoint"]).is_file()
         if available:
-            st.caption("Selected model: " + workspace["label"])
+            complete, run_warning = checkpoint_completion_status(workspace["checkpoint"])
+            st.caption(
+                "Selected model: "
+                + workspace["label"]
+                + " · checkpoint compatibility is checked before inference"
+            )
+            if run_warning:
+                st.warning(run_warning)
+        else:
+            complete = None
+            st.warning(checkpoint_guidance(workspace["checkpoint"]))
         analyze = st.button(
             "Analyze image",
             type="primary",
-            disabled=image is None or not available,
+            disabled=image is None
+            or not available
+            or (workspace["mode"] == "Research model" and complete is False),
             width="stretch",
         )
         if analyze:
             try:
                 with st.spinner("Analyzing the image…"):
-                    predictor = Predictor(workspace["checkpoint"], workspace["allow_smoke"])
-                    validate_model_purpose(
-                        predictor.metadata, workspace["mode"], workspace["allow_smoke"]
+                    image, result, overlay, metadata, explanation_error = analyze_image(
+                        raw, workspace
                     )
-                    result = predictor.predict(image)
-                    overlay = None
-                    try:
-                        overlay = predictor.explain(image)
-                    except (ValueError, RuntimeError, OSError) as exc:
-                        diagnostic("Visual explanation", exc)
+                    if explanation_error:
+                        diagnostic("Visual explanation", explanation_error)
                     st.session_state["analysis"] = {
                         "result": result,
                         "overlay": overlay,
-                        "metadata": predictor.metadata,
+                        "metadata": metadata,
                     }
                     st.session_state["analysis_signature"] = signature
             except (ValueError, RuntimeError, OSError) as exc:
                 st.session_state.pop("analysis", None)
                 diagnostic("Image analysis", exc)
                 st.error(
-                    "Analysis could not finish. Select a compatible trained model in Model & experiments. Engineering models require explicit test-mode acknowledgement."
+                    f"Analysis was stopped because the selected checkpoint or input could not be verified: {exc}"
                 )
                 model_link(key="analysis_error_model")
+        if st.session_state.get("analysis") is not None:
+            st.button(
+                "Analyze another image",
+                on_click=reset_inspection,
+                width="stretch",
+                key="analyze_another_image",
+            )
     with right:
         analysis = st.session_state.get("analysis")
         if not available:
@@ -142,10 +250,6 @@ def inspect_page(workspace):
                 "You can upload and preview an image now. Predictions and visual explanations become available after a research model has been trained and selected.",
             )
             model_link("Set up a model", key="empty_model")
-            st.subheader("What you will receive")
-            st.markdown(
-                "A ranked list of seven lesion categories, model confidence, and a Grad-CAM overlay showing regions that influenced the output."
-            )
         elif image is None:
             empty(
                 "Ready when you are",
@@ -159,11 +263,39 @@ def inspect_page(workspace):
         else:
             result = analysis["result"]
             category = result["predicted_class"]
-            st.subheader("Model prediction")
+            st.subheader(
+                "Engineering smoke output"
+                if workspace["mode"] == "Engineering smoke test"
+                else "Research model output"
+            )
+            if workspace["mode"] == "Engineering smoke test":
+                st.warning(
+                    "This limited, randomly initialized engineering run is for software "
+                    "demonstration only; it is not research evidence."
+                )
             st.markdown(f"**{CLASS_NAMES.get(category, category)} ({category.upper()})**")
-            st.metric("Model confidence", f"{result['confidence']:.1%}")
+            st.metric("Uncalibrated top score", f"{result['confidence']:.1%}")
             st.caption(
-                "Confidence is the model’s score for this category. It is not the probability that a patient has cancer and does not determine severity."
+                "This is an uncalibrated softmax score, not a calibrated probability, a "
+                "patient-level cancer probability, or a measure of severity."
+            )
+            ranked = sorted(
+                result["probabilities"].items(), key=lambda item: item[1], reverse=True
+            )
+            st.subheader("Ranked categories")
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Rank": rank,
+                            "Category": f"{CLASS_NAMES[name]} ({name.upper()})",
+                            "Uncalibrated score": f"{score:.1%}",
+                        }
+                        for rank, (name, score) in enumerate(ranked[:3], start=1)
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
             )
             st.subheader("Visual explanation")
             if analysis["overlay"] is not None:
@@ -179,13 +311,13 @@ def inspect_page(workspace):
                 )
             else:
                 st.info(
-                    "The prediction is available, but a visual explanation could not be generated. Technical details are in Model & experiments."
+                    "The prediction is available, but Grad-CAM was not produced. No heatmap is "
+                    "shown. Technical details are in Model & experiments."
                 )
-            with st.expander("All category scores"):
-                st.markdown(probability_bars(result["probabilities"]), unsafe_allow_html=True)
-                st.caption(
-                    f"Prediction entropy: {result['entropy']:.3f} nats. This describes score dispersion, not clinical certainty."
-                )
+            st.caption(
+                f"Score entropy: {result['entropy']:.3f} nats. Entropy describes score dispersion, "
+                "not certainty, calibration, or clinical risk."
+            )
 
 
 def dataset_page(workspace):
@@ -218,7 +350,7 @@ def dataset_page(workspace):
         if status and status.get("completed_epochs", 0) > 0
         else "Not recorded",
     )
-    c.metric("Model evaluation", "Report available" if metrics else "Not recorded")
+    c.metric("Model evaluation", "Report file found" if metrics else "Not recorded")
     st.caption(
         "These are separate stages. Passed data validation does not establish model accuracy or completed evaluation."
     )
@@ -318,7 +450,11 @@ def dataset_page(workspace):
         model_link("View experiment setup", key="eval_setup")
     else:
         try:
-            validate_evaluation(metrics, workspace["checkpoint"])
+            validate_evaluation(
+                metrics,
+                workspace["checkpoint"],
+                "engineering_smoke" if workspace["mode"] == "Engineering smoke test" else "research",
+            )
             if (
                 metrics["provenance"]["run_type"] == "engineering_smoke"
                 and workspace["mode"] != "Engineering smoke test"
@@ -334,9 +470,11 @@ def dataset_page(workspace):
                 x, y, z = st.columns(3)
                 x.metric("Accuracy", format_score(metrics.get("accuracy")))
                 y.metric("Macro F1", format_score(metrics.get("macro", {}).get("f1")))
-                z.metric("Calibration error", format_score(metrics.get("ece")))
+                z.metric("Expected calibration error", format_score(metrics.get("ece")))
                 st.caption(
-                    "Accuracy: fraction classified correctly. Macro F1: average class-level precision/recall balance. Calibration error: difference between confidence and observed correctness; lower is better."
+                    "Accuracy is the fraction classified correctly. Macro F1 averages class-level "
+                    "precision/recall balance. Expected calibration error (ECE) measures a "
+                    "confidence/calibration discrepancy; it does not calibrate the model's scores."
                 )
                 matrix = pd.DataFrame(
                     [
@@ -388,6 +526,10 @@ def dataset_page(workspace):
                 st.caption(
                     "Recall measures how many reference cases were recovered. Undefined metrics remain unavailable rather than being replaced with zero. Low-support categories need careful interpretation."
                 )
+        except EvaluationRunTypeMismatch as exc:
+            diagnostic("Evaluation compatibility", exc)
+            st.warning(str(exc))
+            metrics = None
         except (ValueError, TypeError, KeyError) as exc:
             diagnostic("Evaluation compatibility", exc)
             st.error(
@@ -406,11 +548,27 @@ def format_score(value):
 
 def fairness_page(workspace):
     heading(
-        "Fairness research",
-        "Separate measurable disease imbalance from skin-tone questions that require trustworthy annotations.",
+        "Methodology, fairness & limitations",
+        "What the current pipeline measures, what evidence it requires, and what it cannot establish.",
+    )
+    st.subheader("Current evaluation methodology")
+    st.markdown(
+        "- Dataset validation checks image decoding, metadata, duplicate pixels, and labels.\n"
+        "- Grouped stratified folds create train, validation, and held-out test partitions; "
+        "available patient/lesion identifiers and exact duplicates are kept in one group.\n"
+        "- Training selects checkpoints using validation macro-F1. The test split is reserved "
+        "for separate evaluation.\n"
+        "- Reports are displayed only when their class mapping and checkpoint identity match "
+        "the selected model."
+    )
+    st.caption(
+        "Grouping cannot establish patient independence when reliable patient identifiers are "
+        "missing. Review the experiment protocol and dataset guide before interpreting results."
     )
     st.markdown(
-        '<div class="notice">HAM10000 does not provide reliable skin-tone annotations sufficient to establish skin-tone fairness.</div>',
+        '<div class="notice"><strong>Fairness evidence gap.</strong> HAM10000 does not provide '
+        "verified skin-tone annotations sufficient to establish skin-tone fairness. Disease-class "
+        "balancing is not skin-tone balancing.</div>",
         unsafe_allow_html=True,
     )
     a, b = st.columns(2, gap="large")
@@ -440,7 +598,11 @@ def fairness_page(workspace):
         and metrics.get("provenance", {}).get("run_type") == "research"
     ):
         try:
-            validate_evaluation(metrics, workspace["checkpoint"])
+            validate_evaluation(
+                metrics,
+                workspace["checkpoint"],
+                "engineering_smoke" if workspace["mode"] == "Engineering smoke test" else "research",
+            )
             rows = subgroup_rows(fairness)
             st.dataframe(rows, hide_index=True, width="stretch")
             st.caption(
@@ -534,9 +696,9 @@ def model_page(workspace, root):
         )
         checkpoint_available = Path(runs[chosen]["checkpoint"]).is_file()
         st.caption(
-            "Saved checkpoint available"
+            "Saved checkpoint available; compatibility will be checked before use."
             if checkpoint_available
-            else "Training has not produced a saved checkpoint yet."
+            else checkpoint_guidance(runs[chosen]["checkpoint"])
         )
         if st.button(
             "Use this model",
@@ -611,7 +773,16 @@ def model_page(workspace, root):
                         frame = pd.DataFrame(history)
                         if {"epoch", "train_loss", "val_loss"} <= set(frame):
                             with st.expander("Training history"):
-                                st.line_chart(frame.set_index("epoch")[["train_loss", "val_loss"]])
+                                if len(frame) > 1:
+                                    st.line_chart(
+                                        frame.set_index("epoch")[["train_loss", "val_loss"]]
+                                    )
+                                else:
+                                    st.dataframe(frame, hide_index=True, width="stretch")
+                                    st.caption(
+                                        "A single-epoch run is shown as a row; there are not "
+                                        "enough epochs for a meaningful trend chart."
+                                    )
                 except (ValueError, OSError) as exc:
                     diagnostic("Training history", exc)
             with st.expander("Experiment configuration"):
@@ -646,29 +817,54 @@ def model_page(workspace, root):
             )
     else:
         empty(
-            "Training is not complete here",
-            "There is no saved checkpoint for the selected research model. You can still inspect dataset quality and plan experiments; image predictions remain disabled.",
+            "No usable checkpoint for the selected model",
+            checkpoint_guidance(workspace["checkpoint"])
+            + " Choose a completed compatible run above, or use the development workflow for a clearly labeled software demonstration.",
         )
     st.button("Go to image inspection", on_click=navigate, args=("Inspect an image",))
     with st.expander(
-        "How to prepare a research model", expanded=not Path(workspace["checkpoint"]).is_file()
+        "Run a development check or research experiment",
+        expanded=not Path(workspace["checkpoint"]).is_file(),
     ):
         st.markdown(
-            "Run these commands from the project directory. Validation checks your existing local dataset; training is a separate action. Use a fresh output directory for each experiment."
+            "Run these commands in Windows PowerShell from the project root. The development "
+            "configuration runs only two training and two validation batches on CPU, from random "
+            "initialization. It creates an engineering smoke model, not a research baseline. "
+            "The existing baseline and dataset folders are not overwritten."
         )
         st.code(
-            ".venv/bin/skinnet validate --root archive --output artifacts/dataset-new --seed 42\n.venv/bin/skinnet train --manifest artifacts/dataset-new/manifest.csv --config configs/baseline.json --output artifacts/baseline-new",
-            language="bash",
+            r".\.venv\Scripts\python.exe -m app.main train --manifest .\artifacts\dataset\manifest.csv --config .\configs\dev.json --output .\artifacts\dev-demo-next",
+            language="powershell",
         )
         st.caption(
-            "If a validated dataset manifest already exists, use it instead of repeating validation. Full training can be slow on a laptop; the README documents CPU and hosted-GPU options."
+            "This expects the already validated manifest at artifacts\\dataset\\manifest.csv. "
+            "If it is absent, validate the local dataset into a new, empty output directory; "
+            "do not reuse a nonempty output folder. Training also requires a fresh run directory."
         )
         st.markdown(
-            "After validation-based model selection is finished, evaluate once on the frozen test manifest:"
+            "To inspect real held-out pipeline output for this smoke run, evaluate it separately:"
         )
         st.code(
-            ".venv/bin/skinnet evaluate --checkpoint artifacts/baseline-new/best.pt --manifest artifacts/baseline-new/manifest.csv --output artifacts/baseline-new/evaluation",
-            language="bash",
+            r".\.venv\Scripts\python.exe -m app.main evaluate --checkpoint .\artifacts\dev-demo-next\best.pt --manifest .\artifacts\dev-demo-next\manifest.csv --output .\artifacts\dev-demo-next\evaluation --device cpu",
+            language="powershell",
+        )
+        st.caption(
+            "Smoke evaluation uses the frozen test split but is still an engineering check, not "
+            "evidence about research performance."
+        )
+        st.subheader("For a research baseline")
+        st.markdown(
+            "Use a **new output directory**. This configuration runs up to 20 epochs with "
+            "ImageNet-pretrained weights, so CPU training may take a long time. Evaluation "
+            "happens separately after training and uses the run's frozen test manifest."
+        )
+        st.code(
+            r".\.venv\Scripts\python.exe -m app.main train --manifest .\artifacts\dataset\manifest.csv --config .\configs\baseline.json --output .\artifacts\baseline-research",
+            language="powershell",
+        )
+        st.code(
+            r".\.venv\Scripts\python.exe -m app.main evaluate --checkpoint .\artifacts\baseline-research\best.pt --manifest .\artifacts\baseline-research\manifest.csv --output .\artifacts\baseline-research\evaluation",
+            language="powershell",
         )
     st.subheader("Reproducibility")
     st.write(
