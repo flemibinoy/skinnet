@@ -46,8 +46,8 @@ def read_report(path):
 def default_workspace(root):
     root = Path(root)
     return {
-        "checkpoint": str(root / "baseline/best.pt"),
-        "evaluation": str(root / "baseline/evaluation"),
+        "checkpoint": str(root / "baseline-rtx2050/best.pt"),
+        "evaluation": str(root / "baseline-rtx2050/evaluation"),
         "dataset": str(root / "dataset"),
         "mode": "Research model",
         "allow_smoke": False,

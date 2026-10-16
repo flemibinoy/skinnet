@@ -40,7 +40,7 @@ def test_missing_artifacts_and_navigation(tmp_path):
     app = launch(tmp_path)
     assert not app.exception
     assert app.title[0].value == "SkinNet+ research workspace"
-    assert "Research software, not a medical device." in text(app)
+    assert "not clinically validated and not a substitute for professional medical evaluation." in text(app)
     assert any(b.label == "Start image inspection" for b in app.button)
     app.radio[0].set_value("Inspect an image").run()
     assert app.title[0].value == "Inspect an image"
@@ -92,7 +92,7 @@ def test_purpose_guards_and_signature(tmp_path):
 
 
 def test_checkpoint_guidance_reports_interrupted_and_missing_runs(tmp_path):
-    run = tmp_path / "baseline"
+    run = Path(default_workspace(tmp_path)["checkpoint"]).parent
     run.mkdir()
     status = run / "status.json"
     status.write_text(json.dumps({"status": "interrupted", "completed_epochs": 0}))
@@ -110,7 +110,7 @@ def test_checkpoint_guidance_reports_interrupted_and_missing_runs(tmp_path):
 
 
 def test_interrupted_checkpoint_is_blocked_for_research_and_warned_in_ui(tmp_path):
-    run = tmp_path / "baseline"
+    run = Path(default_workspace(tmp_path)["checkpoint"]).parent
     run.mkdir()
     checkpoint = run / "best.pt"
     checkpoint.write_bytes(b"fixture checkpoint")
@@ -141,7 +141,7 @@ def test_interrupted_checkpoint_is_blocked_for_research_and_warned_in_ui(tmp_pat
 def test_research_inference_rejects_interrupted_run_status(monkeypatch, tmp_path):
     import app.ui.pages as pages
 
-    run = tmp_path / "baseline"
+    run = Path(default_workspace(tmp_path)["checkpoint"]).parent
     run.mkdir()
     (run / "status.json").write_text(
         json.dumps({"status": "interrupted", "completed_epochs": 1})
@@ -257,7 +257,7 @@ def test_dataset_validation_does_not_imply_evaluation(tmp_path):
 
 
 def test_evaluation_run_type_mismatch_is_explained_without_metrics(tmp_path):
-    run = tmp_path / "baseline"
+    run = Path(default_workspace(tmp_path)["checkpoint"]).parent
     evaluation = run / "evaluation"
     evaluation.mkdir(parents=True)
     checkpoint = run / "best.pt"

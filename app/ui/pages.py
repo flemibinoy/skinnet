@@ -96,12 +96,7 @@ def overview_page(workspace):
         "SkinNet+ research workspace",
         "An explainable, seven-category dermoscopic image-classification prototype.",
     )
-    st.markdown(
-        '<div class="notice"><strong>Research software, not a medical device.</strong> '
-        "It is not clinically validated, cannot diagnose a patient, and must not guide care. "
-        "Model scores are uncalibrated; the project does not apply a calibration procedure.</div>",
-        unsafe_allow_html=True,
-    )
+
     col_a, col_b = st.columns([1.1, 0.9], gap="large")
     with col_a:
         st.subheader("A transparent workflow")
