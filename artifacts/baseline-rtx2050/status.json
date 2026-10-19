@@ -1,0 +1,7 @@
+{
+  "status": "early_stopped",
+  "completed_epochs": 14,
+  "best_validation_macro_f1": 0.7085513361870989,
+  "test_evaluated": false,
+  "fairness": "unavailable: verified tone annotations absent"
+}
