@@ -1,0 +1,79 @@
+{
+  "rows": 10015,
+  "inventory": {
+    "image_file_count": 10018,
+    "unreferenced_image_ids": [
+      "DocScanner 11 May 2026 4-54\u202fpm",
+      "image_bc00323f",
+      "sample1"
+    ],
+    "duplicate_filenames": {}
+  },
+  "expected_rows": 10015,
+  "official_count_matches": true,
+  "columns": [
+    "lesion_id",
+    "image_id",
+    "dx",
+    "dx_type",
+    "age",
+    "sex",
+    "localization",
+    "path",
+    "path_count",
+    "label",
+    "sha256",
+    "pixel_sha256"
+  ],
+  "class_counts": {
+    "nv": 6705,
+    "mel": 1113,
+    "bkl": 1099,
+    "bcc": 514,
+    "akiec": 327,
+    "vasc": 142,
+    "df": 115
+  },
+  "missing_classes": [],
+  "missing_values": {
+    "lesion_id": 0,
+    "image_id": 0,
+    "dx": 0,
+    "dx_type": 0,
+    "age": 57,
+    "sex": 0,
+    "localization": 0,
+    "path": 0,
+    "path_count": 0,
+    "label": 0,
+    "sha256": 0,
+    "pixel_sha256": 0
+  },
+  "dimensions": {
+    "(600, 450)": 10015
+  },
+  "issues": [],
+  "exact_duplicate_images": [
+    [
+      "ISIC_0029938",
+      "ISIC_0024777"
+    ],
+    [
+      "ISIC_0029861",
+      "ISIC_0024366"
+    ]
+  ],
+  "duplicate_label_conflicts": [],
+  "identifiers": [
+    "lesion_id"
+  ],
+  "skin_tone": {
+    "status": "unavailable",
+    "reason": "HAM10000 has no verified skin-tone annotations"
+  },
+  "acquisition": {
+    "modality": "dermoscopy",
+    "source_by_image": "not established by metadata"
+  },
+  "valid": true
+}

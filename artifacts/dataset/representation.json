@@ -1,0 +1,18 @@
+{
+  "sample_count": 10015,
+  "disease_counts": {
+    "nv": 6705,
+    "mel": 1113,
+    "bkl": 1099,
+    "bcc": 514,
+    "akiec": 327,
+    "vasc": 142,
+    "df": 115
+  },
+  "identifiers": [
+    "lesion_id"
+  ],
+  "skin_tone_status": "unavailable",
+  "reason": "HAM10000 does not supply verified skin-tone annotations. No image-based estimation is performed.",
+  "severity_status": "disabled: no ground-truth severity annotations"
+}

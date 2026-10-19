@@ -1,0 +1,51 @@
+{
+  "seed": 42,
+  "strategy": "10 stratified group folds; fold0 test, fold1 val",
+  "class_map": [
+    "akiec",
+    "bcc",
+    "bkl",
+    "df",
+    "mel",
+    "nv",
+    "vasc"
+  ],
+  "counts": {
+    "akiec": {
+      "test": 33,
+      "train": 261,
+      "val": 33
+    },
+    "bcc": {
+      "test": 52,
+      "train": 411,
+      "val": 51
+    },
+    "bkl": {
+      "test": 110,
+      "train": 879,
+      "val": 110
+    },
+    "df": {
+      "test": 11,
+      "train": 92,
+      "val": 12
+    },
+    "mel": {
+      "test": 111,
+      "train": 891,
+      "val": 111
+    },
+    "nv": {
+      "test": 671,
+      "train": 5363,
+      "val": 671
+    },
+    "vasc": {
+      "test": 14,
+      "train": 114,
+      "val": 14
+    }
+  },
+  "grouping": "connected patient/lesion/file/pixel duplicate components"
+}
